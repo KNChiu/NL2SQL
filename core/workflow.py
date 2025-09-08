@@ -115,12 +115,16 @@ class NL2SQLWorkflow:
     def _initialize_node(self, state: WorkflowState) -> Dict[str, Any]:
         """Initialize the workflow"""
         
+        self.logger.info("Processing natural language query")
+        self.logger.debug(f"[NODE] Initializing workflow for query: {state['user_query']}")
+        
         update = StateManager.update_stage(state, WorkflowStage.INITIALIZED)
         update["messages"] = [
             SystemMessage(content="Starting NL2SQL workflow for user query."),
             HumanMessage(content=state["user_query"])
         ]
         
+        self.logger.debug("[NODE] Initialize node completed successfully")
         return update
     
     def _retrieve_schema_node(self, state: WorkflowState) -> Dict[str, Any]:
@@ -200,6 +204,7 @@ class NL2SQLWorkflow:
             schema_message = AIMessage(content=f"Retrieved schema for tables: {', '.join(selected_tables)}")
             updates["messages"] = state["messages"] + [schema_message]
             
+            logger.info("Retrieved database schema successfully")
             logger.debug("Schema retrieval completed successfully")
             return updates
             
@@ -209,6 +214,9 @@ class NL2SQLWorkflow:
     
     def _generate_query_node(self, state: WorkflowState) -> Dict[str, Any]:
         """Generate SQL query from natural language"""
+        
+        self.logger.info("Generating SQL query")
+        self.logger.debug("[NODE] Starting SQL query generation")
         
         try:
             # Create prompt for SQL generation
@@ -230,6 +238,8 @@ class NL2SQLWorkflow:
             
             # Extract SQL from response
             sql_query = self._extract_sql_from_response(response.content)
+            self.logger.info("Generated SQL query successfully")
+            self.logger.debug(f"[NODE] Generated SQL query: {sql_query}")
             
             updates = {}
             updates.update(StateManager.update_stage(state, WorkflowStage.QUERY_GENERATED))
@@ -239,6 +249,7 @@ class NL2SQLWorkflow:
             gen_message = AIMessage(content=f"Generated SQL: {sql_query}")
             updates["messages"] = state["messages"] + [gen_message]
             
+            self.logger.debug("[NODE] Query generation completed successfully")
             return updates
             
         except Exception as e:
@@ -247,12 +258,23 @@ class NL2SQLWorkflow:
     def _validate_query_node(self, state: WorkflowState) -> Dict[str, Any]:
         """Validate generated SQL query"""
         
+        self.logger.info("Validating SQL query")
+        
         try:
             query_info = state.get("query_info")
             sql_query = query_info.original_query
             
+            self.logger.debug(f"[NODE] Validating SQL query: {sql_query}")
+            
             # Validate using security validator
             validation_result = self.validator.validate_query(sql_query)
+            
+            if validation_result.is_safe and validation_result.status.value == "QUERY_IS_CORRECT":
+                self.logger.info("Query validation passed")
+            else:
+                self.logger.warning(f"Query validation failed: {validation_result.message}")
+            
+            self.logger.debug(f"[NODE] Validation result: {validation_result.status.value} - is_safe: {validation_result.is_safe}")
             
             updates = {}
             updates.update(StateManager.update_stage(state, WorkflowStage.QUERY_VALIDATED))
@@ -268,23 +290,33 @@ class NL2SQLWorkflow:
             )
             updates["messages"] = state["messages"] + [val_message]
             
+            self.logger.debug("[NODE] Query validation completed successfully")
             return updates
             
         except Exception as e:
+            self.logger.error(f"[NODE] Query validation failed: {e}", exc_info=True)
             return StateManager.add_error(state, "QueryValidationError", str(e))
     
     def _execute_query_node(self, state: WorkflowState) -> Dict[str, Any]:
         """Execute validated SQL query"""
         
+        self.logger.info("Executing SQL query")
+        
         try:
             query_info = state.get("query_info")
             sql_query = query_info.validated_query
+            
+            self.logger.debug(f"[NODE] Executing SQL query: {sql_query}")
             
             # Execute query safely
             result = self.db.run_no_throw(sql_query)
             
             if not result:
+                self.logger.warning("Query execution returned empty result")
                 raise Exception("Query execution returned empty result")
+            
+            self.logger.info("Executed SQL query successfully")
+            self.logger.debug(f"[NODE] Query execution result: {result}")
             
             updates = {}
             updates.update(StateManager.update_stage(state, WorkflowStage.QUERY_EXECUTED))
@@ -294,17 +326,23 @@ class NL2SQLWorkflow:
             exec_message = AIMessage(content=f"Query executed successfully. Result: {result}")
             updates["messages"] = state["messages"] + [exec_message]
             
+            self.logger.debug("[NODE] Query execution completed successfully")
             return updates
             
         except Exception as e:
+            self.logger.error(f"Query execution failed: {e}", exc_info=True)
             return StateManager.add_error(state, "QueryExecutionError", str(e))
     
     def _generate_response_node(self, state: WorkflowState) -> Dict[str, Any]:
         """Generate natural language response"""
         
+        self.logger.info("Generating natural language response")
+        
         try:
             query_info = state.get("query_info")
             execution_result = query_info.execution_result
+            
+            self.logger.debug(f"[NODE] Generating response for result: {execution_result}")
             
             # Create prompt for response generation
             response_prompt = ChatPromptTemplate.from_messages([
@@ -320,6 +358,9 @@ class NL2SQLWorkflow:
                 )
             )
             
+            self.logger.info("Generated natural language response successfully")
+            self.logger.debug(f"[NODE] Generated response: {response.content}")
+            
             updates = {}
             updates.update(StateManager.update_stage(state, WorkflowStage.RESPONSE_GENERATED))
             updates.update(StateManager.update_response_info(
@@ -333,19 +374,27 @@ class NL2SQLWorkflow:
             response_message = AIMessage(content=response.content)
             updates["messages"] = state["messages"] + [response_message]
             
+            self.logger.debug("[NODE] Response generation completed successfully")
             return updates
             
         except Exception as e:
+            self.logger.error(f"Response generation failed: {e}", exc_info=True)
             return StateManager.add_error(state, "ResponseGenerationError", str(e))
     
     def _handle_error_node(self, state: WorkflowState) -> Dict[str, Any]:
         """Handle workflow errors"""
         
+        self.logger.info("[NODE] Starting error handling")
+        
         errors = state.get("errors", [])
+        self.logger.info(f"[NODE] Processing {len(errors)} errors")
+        
         if not errors:
+            self.logger.warning("[NODE] No errors found in error handling node")
             return {"current_stage": WorkflowStage.ERROR}
         
         latest_error = errors[-1]
+        self.logger.error(f"[NODE] Handling error: {latest_error.error_type} - {latest_error.message}")
         
         # Generate error response
         error_response = f"I encountered an error while processing your query: {latest_error.message}"
@@ -359,6 +408,7 @@ class NL2SQLWorkflow:
         error_message = AIMessage(content=error_response)
         updates["messages"] = state["messages"] + [error_message]
         
+        self.logger.debug("[NODE] Error handling completed")
         return updates
     
     def _retry_increment_node(self, state: WorkflowState) -> Dict[str, Any]:
@@ -411,16 +461,18 @@ class NL2SQLWorkflow:
     def _should_execute_or_retry(self, state: WorkflowState) -> Literal["execute", "retry", "error"]:
         """Determine next step after validation"""
         
+        self.logger.debug("[ROUTING] Evaluating post-validation routing logic")
+        
         if state.get("current_stage") == WorkflowStage.ERROR:
-            self.logger.debug("Current stage is ERROR, returning error")
+            self.logger.debug("[ROUTING] Current stage is ERROR, returning error")
             return "error"
             
         query_info = state.get("query_info")
         validation_result = query_info.validation_result
         
-        self.logger.debug(f"Validation result: {validation_result.status.value if validation_result else 'None'}, "
-                         f"is_safe: {validation_result.is_safe if validation_result else 'None'}, "
-                         f"retry_count: {query_info.retry_count}/{query_info.max_retries}")
+        self.logger.debug(f"[ROUTING] Validation analysis: status={validation_result.status.value if validation_result else 'None'}, "
+                         f"is_safe={validation_result.is_safe if validation_result else 'None'}, "
+                         f"retry_count={query_info.retry_count}/{query_info.max_retries}")
         
         # Check if we've exceeded retry limits first
         if query_info.retry_count >= query_info.max_retries:
@@ -441,20 +493,22 @@ class NL2SQLWorkflow:
             self.logger.error("Query validation failed and cannot retry")
             return "error"
         
-        self.logger.debug("Query validation passed, proceeding to execution")
+        self.logger.debug("[ROUTING] ✅ All validation checks passed, proceeding to execution")
         return "execute"
     
     def _should_respond_or_retry(self, state: WorkflowState) -> Literal["respond", "retry", "error"]:
         """Determine next step after execution"""
         
+        self.logger.debug("[ROUTING] Evaluating post-execution routing logic")
+        
         if state.get("current_stage") == WorkflowStage.ERROR:
-            self.logger.debug("Current stage is ERROR, returning error")
+            self.logger.debug("[ROUTING] Current stage is ERROR, returning error")
             return "error"
             
         query_info = state.get("query_info")
         
-        self.logger.debug(f"Execution check - retry_count: {query_info.retry_count}/{query_info.max_retries}, "
-                         f"execution_result exists: {bool(query_info.execution_result)}")
+        self.logger.debug(f"[ROUTING] Execution analysis: retry_count={query_info.retry_count}/{query_info.max_retries}, "
+                         f"execution_result_exists={bool(query_info.execution_result)}")
         
         # Check if we've exceeded retry limits first
         if query_info.retry_count >= query_info.max_retries:
@@ -468,7 +522,7 @@ class NL2SQLWorkflow:
             self.logger.error("Query execution failed and cannot retry")
             return "error"
         
-        self.logger.debug("Query execution successful, proceeding to response generation")
+        self.logger.debug("[ROUTING] ✅ Query execution successful, proceeding to response generation")
         return "respond"
     
     def _parse_tables_from_result(self, tables_result: str) -> list:
@@ -573,3 +627,215 @@ Generate a clean SQL query that answers the user's question."""
     def compile(self):
         """Compile the workflow"""
         return self.workflow.compile()
+    
+    def get_graph_info(self) -> dict:
+        """Get workflow graph information for visualization"""
+        
+        graph_info = {
+            "nodes": [],
+            "edges": [],
+            "conditional_edges": []
+        }
+        
+        # Get all nodes
+        for node_name in self.workflow.nodes:
+            graph_info["nodes"].append({
+                "id": node_name,
+                "name": node_name,
+                "type": "node"
+            })
+        
+        # Get edges and conditional edges
+        for edge in self.workflow.edges:
+            if len(edge) == 2:  # Regular edge
+                graph_info["edges"].append({
+                    "from": edge[0],
+                    "to": edge[1],
+                    "type": "regular"
+                })
+        
+        # Add conditional edge information
+        for source, conditions in self.workflow.conditional_edges.items():
+            for condition, target in conditions.items():
+                graph_info["conditional_edges"].append({
+                    "from": source,
+                    "to": target,
+                    "condition": condition,
+                    "type": "conditional"
+                })
+        
+        return graph_info
+    
+    def print_graph_structure(self):
+        """Print a visual representation of the workflow graph"""
+        
+        print("\n" + "="*60)
+        print("LANGGRAPH WORKFLOW STRUCTURE")
+        print("="*60)
+        
+        # Print nodes
+        print("\nNodes:")
+        print("-" * 30)
+        for node in self.workflow.nodes:
+            print(f"  • {node}")
+        
+        # Print regular edges
+        print(f"\nRegular Edges:")
+        print("-" * 30)
+        for edge in self.workflow.edges:
+            if len(edge) == 2:
+                print(f"  {edge[0]} → {edge[1]}")
+        
+        # Print conditional edges - use manual mapping since internal structure isn't accessible
+        print(f"\nConditional Edges:")
+        print("-" * 30)
+        
+        # Manual mapping of conditional edges we know exist
+        conditional_mappings = [
+            {
+                "from": "generate_query",
+                "function": "_should_validate_or_retry",
+                "targets": ["validate_query", "retry_increment", "handle_error"]
+            },
+            {
+                "from": "validate_query", 
+                "function": "_should_execute_or_retry",
+                "targets": ["execute_query", "retry_increment", "handle_error"]
+            },
+            {
+                "from": "execute_query",
+                "function": "_should_respond_or_retry", 
+                "targets": ["generate_response", "retry_increment", "handle_error"]
+            }
+        ]
+        
+        for mapping in conditional_mappings:
+            print(f"  {mapping['from']} → [conditional logic]")
+            print(f"    Function: {mapping['function']}")
+            print(f"    Possible targets: {', '.join(mapping['targets'])}")
+            print()
+        
+        print("="*60)
+        
+        # Print workflow description
+        print("\nWorkflow Flow Description:")
+        print("-" * 30)
+        print("1. START → initialize → retrieve_schema → generate_query")
+        print("2. generate_query conditionally routes to:")
+        print("   - validate_query (if query generated successfully)")  
+        print("   - retry_increment (if query generation failed, retries available)")
+        print("   - handle_error (if max retries exceeded)")
+        print("3. validate_query conditionally routes to:")
+        print("   - execute_query (if validation passed)")
+        print("   - retry_increment (if validation failed, retries available)")
+        print("   - handle_error (if max retries exceeded)")
+        print("4. execute_query conditionally routes to:")
+        print("   - generate_response (if execution successful)")
+        print("   - retry_increment (if execution failed, retries available)")
+        print("   - handle_error (if max retries exceeded)")
+        print("5. retry_increment → generate_query (retry loop)")
+        print("6. generate_response → END")
+        print("7. handle_error → END")
+        print("="*60)
+    
+    def get_execution_path(self, state_history: list) -> list:
+        """Extract execution path from state history"""
+        
+        path = []
+        self.logger.debug(f"Processing {len(state_history)} states in execution path")
+        
+        # Define node name to stage mapping
+        node_to_stage = {
+            "initialize": "INITIALIZED",
+            "retrieve_schema": "SCHEMA_RETRIEVED", 
+            "generate_query": "QUERY_GENERATED",
+            "validate_query": "QUERY_VALIDATED",
+            "execute_query": "QUERY_EXECUTED",
+            "generate_response": "RESPONSE_GENERATED",
+            "handle_error": "ERROR",
+            "retry_increment": "RETRYING"
+        }
+        
+        for i, state in enumerate(state_history):
+            try:
+                self.logger.debug(f"Processing state {i}: type={type(state)}, keys={list(state.keys()) if isinstance(state, dict) else 'N/A'}")
+                
+                # LangGraph stream returns dict with node names as keys
+                if isinstance(state, dict):
+                    # Check if this is a node execution result (LangGraph format)
+                    if len(state) == 1:
+                        node_name = list(state.keys())[0]
+                        node_result = state[node_name]
+                        
+                        # Map node name to readable stage
+                        stage_str = node_to_stage.get(node_name, node_name.upper())
+                        
+                        # Extract retry count if available
+                        retry_count = 0
+                        if isinstance(node_result, dict):
+                            query_info = node_result.get("query_info")
+                            if query_info and hasattr(query_info, 'retry_count'):
+                                retry_count = query_info.retry_count
+                        
+                        self.logger.debug(f"Node execution: {node_name} → {stage_str}")
+                        
+                    else:
+                        # Handle full state dict (initial state format)
+                        current_stage = state.get("current_stage", "unknown")
+                        query_info = state.get("query_info")
+                        
+                        retry_count = 0
+                        if query_info:
+                            if hasattr(query_info, 'retry_count'):
+                                retry_count = query_info.retry_count
+                            elif isinstance(query_info, dict):
+                                retry_count = query_info.get("retry_count", 0)
+                        
+                        # Convert enum to string value if needed
+                        stage_str = current_stage
+                        if hasattr(current_stage, 'value'):
+                            stage_str = current_stage.value
+                        elif hasattr(current_stage, 'name'):
+                            stage_str = current_stage.name
+                        else:
+                            stage_str = str(current_stage)
+                
+                else:
+                    # Pydantic object access (fallback)
+                    current_stage = getattr(state, "current_stage", "unknown")
+                    stage_str = current_stage.value if hasattr(current_stage, 'value') else str(current_stage)
+                    retry_count = 0
+                
+                path.append({
+                    "step": i + 1,
+                    "stage": stage_str,
+                    "retry_count": retry_count,
+                    "timestamp": "workflow_step"
+                })
+                
+            except Exception as e:
+                # Fallback for problematic states
+                self.logger.warning(f"Error processing state {i}: {e}")
+                path.append({
+                    "step": i + 1,
+                    "stage": "unknown",
+                    "retry_count": 0,
+                    "timestamp": "unknown"
+                })
+        
+        return path
+    
+    def print_execution_path(self, state_history: list):
+        """Print the execution path taken through the workflow"""
+        
+        path = self.get_execution_path(state_history)
+        
+        print("\n" + "="*60)
+        print("WORKFLOW EXECUTION PATH")
+        print("="*60)
+        
+        for step in path:
+            retry_info = f" (retry {step['retry_count']})" if step['retry_count'] > 0 else ""
+            print(f"Step {step['step']}: {step['stage']}{retry_info}")
+        
+        print("="*60)

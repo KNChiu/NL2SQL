@@ -231,6 +231,10 @@ class NL2SQLApp:
                     self._show_help()
                     continue
                 
+                if user_input.lower() == 'graph':
+                    self.show_workflow_graph()
+                    continue
+                
                 if user_input.lower() == 'info':
                     result = self.get_database_info()
                     self._print_result(result)
@@ -258,9 +262,15 @@ class NL2SQLApp:
         """Show available commands"""
         print("\n📋 Available Commands:")
         print("  help  - Show this help message")
-        print("  info  - Show database information")  
+        print("  info  - Show database information")
+        print("  graph - Show workflow graph structure")
         print("  exit  - Exit the application")
         print("  Any other text will be processed as a natural language query\n")
+        print("📝 CLI Options:")
+        print("  --trace         - Enable execution tracing")
+        print("  --show-graph    - Display workflow structure and exit")
+        print("  --debug         - Enable debug logging")
+        print("  --db-info       - Show database info and exit\n")
     
     def _print_result(self, result: Dict[str, Any]):
         """Print formatted result"""
@@ -335,6 +345,123 @@ class NL2SQLApp:
         self.cleanup()
         sys.exit(0)
     
+    def show_workflow_graph(self):
+        """Display the workflow graph structure"""
+        if not self.workflow:
+            print("❌ Workflow not initialized")
+            return
+        
+        self.workflow.print_graph_structure()
+    
+    def process_query_with_trace(self, user_query: str) -> Dict[str, Any]:
+        """Process query with execution tracing enabled"""
+        
+        start_time = time.time()
+        state_history = []
+        
+        try:
+            # Validate user input
+            is_valid, validation_message = validate_user_input(user_query)
+            if not is_valid:
+                return create_error_response(validation_message, "InputValidationError")
+            
+            # Create initial state
+            initial_state = StateManager.create_initial_state(user_query)
+            state_history.append(initial_state.copy())
+            
+            # Execute workflow with tracing
+            self.logger.info(f"Processing query with tracing: {user_query}")
+            
+            # Use stream to capture intermediate states and build final state
+            accumulated_state = initial_state.copy()
+            final_state = None
+            
+            for i, step in enumerate(self.compiled_workflow.stream(
+                initial_state,
+                config={"recursion_limit": self.recursion_limit}
+            )):
+                self.logger.debug(f"Stream step {i}: type={type(step)}, keys={list(step.keys()) if isinstance(step, dict) else 'N/A'}")
+                self.logger.debug(f"Stream step {i} content: {step}")
+                
+                # Accumulate state changes from each node
+                if isinstance(step, dict):
+                    for node_name, node_result in step.items():
+                        if isinstance(node_result, dict):
+                            # Update accumulated state with node result
+                            accumulated_state.update(node_result)
+                            self.logger.debug(f"Updated accumulated state with {node_name} result")
+                
+                state_history.append(step.copy() if hasattr(step, 'copy') else step)
+                final_state = step
+            
+            if final_state is None:
+                raise Exception("Workflow did not produce any output")
+            
+            # Print execution trace
+            self.workflow.print_execution_path(state_history)
+            
+            # Debug final accumulated state
+            self.logger.debug(f"Final accumulated state type: {type(accumulated_state)}")
+            self.logger.debug(f"Final accumulated state keys: {list(accumulated_state.keys()) if isinstance(accumulated_state, dict) else 'N/A'}")
+            self.logger.debug(f"Accumulated state response_info: {accumulated_state.get('response_info', 'NOT_FOUND')}")
+            
+            # Get workflow summary from accumulated state
+            summary = StateManager.get_workflow_summary(accumulated_state)
+            
+            # Debug summary content
+            self.logger.debug(f"Workflow summary: {summary}")
+            
+            # Calculate execution time
+            execution_time = time.time() - start_time
+            summary["execution_time_formatted"] = format_execution_time(execution_time)
+            summary["execution_trace"] = state_history
+            
+            # Save result if enabled
+            if settings.workflow.enable_tracing:
+                save_workflow_result(summary["workflow_id"], summary)
+            
+            # Return success response
+            return create_success_response(summary, "Query processed successfully with trace")
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            
+            # Log detailed error information
+            self.logger.error(f"Error processing query with trace: {e}", exc_info=True)
+            
+            # Print partial execution trace if available
+            if state_history:
+                print("\n" + "="*60)
+                print("PARTIAL EXECUTION TRACE (before error)")
+                print("="*60)
+                self.workflow.print_execution_path(state_history)
+            
+            # Handle error similar to regular process_query
+            from langgraph.errors import GraphRecursionError
+            if isinstance(e, GraphRecursionError):
+                friendly_message = "Workflow execution error: The system encountered too many retry attempts with tracing enabled."
+                error_type = "GraphRecursionError"
+            else:
+                friendly_message = get_user_friendly_error(e)
+                error_type = "WorkflowExecutionError"
+            
+            debug_info = create_debug_info()
+            debug_info["execution_time"] = execution_time
+            debug_info["original_error"] = str(e)
+            debug_info["recursion_limit"] = self.recursion_limit
+            debug_info["state_history"] = state_history
+            
+            return create_error_response(
+                friendly_message,
+                error_type,
+                details=debug_info if settings.workflow.enable_debug else None,
+                suggestions=[
+                    "Try rephrasing your query in simpler terms",
+                    "Check if you're asking about data that exists in the database",
+                    "Use 'info' command to see available tables"
+                ]
+            )
+    
     def cleanup(self):
         """Clean up resources"""
         if hasattr(self, 'logger') and self.logger:
@@ -389,6 +516,16 @@ def main():
         action="store_true",
         help="Enable debug mode"
     )
+    parser.add_argument(
+        "--show-graph",
+        action="store_true",
+        help="Display the workflow graph structure"
+    )
+    parser.add_argument(
+        "--trace",
+        action="store_true", 
+        help="Enable execution tracing to see workflow path"
+    )
     
     args = parser.parse_args()
     
@@ -404,10 +541,15 @@ def main():
         sys.exit(1)
     
     # Handle different modes
-    if args.interactive:
+    if args.show_graph:
+        app.show_workflow_graph()
+    elif args.interactive:
         app.interactive_mode()
     elif args.query:
-        result = app.process_query(args.query)
+        if args.trace:
+            result = app.process_query_with_trace(args.query)
+        else:
+            result = app.process_query(args.query)
         app._print_result(result)
     elif args.validate_sql:
         result = app.validate_sql(args.validate_sql)

@@ -9,6 +9,8 @@ A modular, secure, and extensible Natural Language to SQL system built with Lang
 - **LangGraph Orchestration**: Reliable workflow management with retries and error handling
 - **Structured JSON Outputs**: Comprehensive state tracking and result formatting
 - **Multi-turn Interaction**: Support for iterative query refinement
+- **Execution Tracing**: Real-time workflow visualization and debugging capabilities
+- **Graph Visualization**: Interactive workflow structure display and analysis
 - **Extensible Design**: Easy to add new validation rules and database connectors
 
 ## 📁 Project Structure
@@ -72,6 +74,16 @@ uv pip install -r requirements.txt
 3. **Single Query**
    ```bash
    python main.py --query "Show me the top 5 customers by total sales"
+   ```
+
+4. **Trace Execution**
+   ```bash
+   python main.py --trace --query "What are the most popular music genres?"
+   ```
+
+5. **View Workflow Graph**
+   ```bash
+   python main.py --show-graph
    ```
 
 ### Installation Troubleshooting
@@ -154,6 +166,16 @@ Each workflow execution produces structured JSON output:
 python main.py --query "What are the most popular music genres?"
 ```
 
+**Trace Execution (with detailed workflow visualization):**
+```bash
+python main.py --trace --query "What are the most popular music genres?"
+```
+
+**View Workflow Structure:**
+```bash
+python main.py --show-graph
+```
+
 **SQL Validation:**
 ```bash
 python main.py --validate-sql "SELECT * FROM users"
@@ -167,6 +189,46 @@ python main.py --db-info
 **Interactive Mode:**
 ```bash
 python main.py --interactive
+# Available commands:
+# - help: Show available commands
+# - info: Show database information
+# - graph: Display workflow structure
+# - exit: Exit the application
+```
+
+**Debug Mode (with detailed logging):**
+```bash
+python main.py --debug --query "Show me customer data"
+```
+
+## 🔍 Debugging and Tracing
+
+### Execution Tracing
+Use `--trace` to see detailed workflow execution:
+```bash
+python main.py --trace --query "Your query here"
+```
+This shows:
+- Step-by-step workflow execution path
+- Node-by-node state changes
+- Retry attempts and error handling
+- Final AI response generation
+
+### Workflow Visualization
+View the complete workflow structure:
+```bash
+python main.py --show-graph
+```
+Shows:
+- All workflow nodes and connections
+- Conditional routing logic
+- Retry mechanisms
+- Error handling paths
+
+### Debug Logging
+Enable detailed logging for troubleshooting:
+```bash
+python main.py --debug --query "Your query"
 ```
 
 ## 🛠️ Development

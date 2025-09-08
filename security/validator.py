@@ -151,7 +151,7 @@ class SQLValidator:
         correctness_check = self._check_correctness(clean_query)
         logger.debug(f"Correctness check result: {correctness_check.status.value}, safe: {correctness_check.is_safe}")
         
-        logger.info(f"Query validation completed with status: {correctness_check.status.value}")
+        logger.debug(f"Query validation completed with status: {correctness_check.status.value}")
         return correctness_check
     
     def _check_safety(self, query: str) -> ValidationResult:

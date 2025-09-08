@@ -192,21 +192,80 @@ class StateManager:
     @staticmethod
     def get_workflow_summary(state: WorkflowState) -> Dict[str, Any]:
         """Get structured summary of workflow state for JSON output"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Handle both dict and TypedDict access patterns
+        if isinstance(state, dict):
+            metadata = state.get("metadata", {})
+            user_query = state.get("user_query", "")
+            current_stage = state.get("current_stage", WorkflowStage.INITIALIZED)
+            query_info = state.get("query_info", QueryInfo())
+            response_info = state.get("response_info", ResponseInfo())
+            errors = state.get("errors", [])
+        else:
+            # Handle Pydantic object access
+            metadata = getattr(state, "metadata", {})
+            user_query = getattr(state, "user_query", "")
+            current_stage = getattr(state, "current_stage", WorkflowStage.INITIALIZED)
+            query_info = getattr(state, "query_info", QueryInfo())
+            response_info = getattr(state, "response_info", ResponseInfo())
+            errors = getattr(state, "errors", [])
+        
+        # Debug logging for response_info
+        logger.debug(f"Response info type: {type(response_info)}")
+        logger.debug(f"Response info content: {response_info}")
+        
+        # Extract natural language response safely
+        natural_language = ""
+        structured_data = {}
+        confidence = 0.0
+        
+        if hasattr(response_info, 'natural_language_response'):
+            natural_language = response_info.natural_language_response
+            structured_data = response_info.structured_data
+            confidence = response_info.confidence_score
+        elif isinstance(response_info, dict):
+            natural_language = response_info.get("natural_language_response", "")
+            structured_data = response_info.get("structured_data", {})
+            confidence = response_info.get("confidence_score", 0.0)
+        
+        logger.debug(f"Extracted natural_language: {repr(natural_language)}")
+        
+        # Extract SQL query info safely
+        sql_query = ""
+        validation_status = None
+        retry_count = 0
+        
+        if hasattr(query_info, 'validated_query'):
+            sql_query = query_info.validated_query
+            validation_status = query_info.validation_result.status.value if query_info.validation_result else None
+            retry_count = query_info.retry_count
+        elif isinstance(query_info, dict):
+            sql_query = query_info.get("validated_query", "")
+            val_result = query_info.get("validation_result")
+            validation_status = val_result.status.value if val_result else None
+            retry_count = query_info.get("retry_count", 0)
+        
+        # Extract current stage value
+        stage_value = current_stage
+        if hasattr(current_stage, 'value'):
+            stage_value = current_stage.value
         
         return {
-            "workflow_id": state.get("metadata", {}).get("workflow_id", "unknown"),
-            "user_query": state.get("user_query", ""),
-            "current_stage": state.get("current_stage", WorkflowStage.INITIALIZED),
-            "status": "success" if state.get("current_stage") == WorkflowStage.RESPONSE_GENERATED else "in_progress",
+            "workflow_id": metadata.get("workflow_id", "unknown") if isinstance(metadata, dict) else "unknown",
+            "user_query": user_query,
+            "current_stage": stage_value,
+            "status": "success" if stage_value == WorkflowStage.RESPONSE_GENERATED else "in_progress",
             "query_info": {
-                "sql_query": state.get("query_info", QueryInfo()).validated_query,
-                "validation_status": state.get("query_info", QueryInfo()).validation_result.status.value if state.get("query_info", QueryInfo()).validation_result else None,
-                "retry_count": state.get("query_info", QueryInfo()).retry_count
+                "sql_query": sql_query,
+                "validation_status": validation_status,
+                "retry_count": retry_count
             },
             "response": {
-                "natural_language": state.get("response_info", ResponseInfo()).natural_language_response,
-                "structured_data": state.get("response_info", ResponseInfo()).structured_data,
-                "confidence": state.get("response_info", ResponseInfo()).confidence_score
+                "natural_language": natural_language,
+                "structured_data": structured_data,
+                "confidence": confidence
             },
             "errors": [
                 {
@@ -214,9 +273,9 @@ class StateManager:
                     "type": error.error_type,
                     "message": error.message,
                     "timestamp": error.timestamp.isoformat()
-                } for error in state.get("errors", [])
+                } for error in errors
             ],
             "execution_time": (
-                datetime.now() - state.get("metadata", {}).get("start_time", datetime.now())
-            ).total_seconds()
+                datetime.now() - metadata.get("start_time", datetime.now())
+            ).total_seconds() if isinstance(metadata, dict) else 0.0
         }

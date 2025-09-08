@@ -47,6 +47,12 @@ Develop a system that converts natural language queries into SQL and executes th
 - Interactive CLI interface with multiple operation modes
 - Comprehensive configuration management with Pydantic
 - Structured logging and result persistence
+- **NEW**: Execution tracing and workflow visualization capabilities
+- **NEW**: GraphRecursionError resolution with improved retry logic
+- **NEW**: LangGraph workflow structure visualization (`--show-graph`)
+- **NEW**: Real-time execution path tracking (`--trace`)
+- **NEW**: Enhanced state management for trace mode compatibility
+- **NEW**: Improved logging system with INFO/DEBUG level separation
 
 ✅ **Technical Stack:**
 - LangGraph >= 0.2.0 for workflow orchestration
@@ -64,26 +70,62 @@ Develop a system that converts natural language queries into SQL and executes th
 - Input validation with length and content checks
 - Dangerous pattern detection and blocking
 
-## 5. Current Issues & Required Fixes
+## 5. Recent Fixes & Current Status
 
-🔴 **Critical Issues:**
-- **Import Error**: `time` module not imported in `main.py` before line 88 usage
-- **Logger Scope**: Potential logger access issues in `core/workflow.py:411`
-- **Database Path**: Mismatch between default config path and actual database location
+✅ **Recently Resolved Issues:**
+- **GraphRecursionError**: Fixed infinite retry loops and improved workflow stop conditions
+- **State Management**: Enhanced `StateManager.get_workflow_summary()` to handle different state formats
+- **Trace Mode Response**: Fixed missing AI response display in trace mode execution
+- **SQL Validation**: Reduced false positives in security validation patterns
+- **Logging System**: Cleaned up INFO level logging and added comprehensive DEBUG logging
+- **Workflow Visualization**: Added complete LangGraph structure display and execution tracking
 
-🟡 **Medium Priority:**
+🟡 **Medium Priority (Remaining):**
 - **Type Compatibility**: `tuple[bool, str]` annotation in `utils/helpers.py:119` needs Python 3.9+
-- **Error Handling**: Missing graceful shutdown and connection cleanup mechanisms
-- **Path Resolution**: Complex database path logic may cause file not found errors
+- **Database Path**: Potential mismatch between default config path and actual database location  
+- **Path Resolution**: Complex database path logic may cause file not found errors in some environments
 
-🟢 **Minor Improvements Needed:**
+🟢 **Future Enhancements:**
 - Add comprehensive test suite
 - Enhance SQL injection detection patterns
 - Add API documentation
 - Implement query caching mechanism
 - Add performance metrics and monitoring
+- Add support for more database types
+- Implement query optimization suggestions
 
-## 6. File Structure
+## 6. New Debugging & Tracing Features
+
+### 6.1 Workflow Visualization
+- **Command**: `python main.py --show-graph`
+- **Interactive**: `graph` command in interactive mode
+- **Functionality**: Displays complete LangGraph workflow structure including:
+  - All nodes and their connections
+  - Conditional routing logic with decision functions
+  - Retry mechanisms and error handling paths
+  - Clear workflow execution flow description
+
+### 6.2 Execution Tracing
+- **Command**: `python main.py --trace --query "Your query"`
+- **Functionality**: Real-time workflow execution tracking showing:
+  - Step-by-step execution path through nodes
+  - State changes and data flow between nodes
+  - Retry attempts and error recovery
+  - Complete execution history and timing
+
+### 6.3 Enhanced State Management
+- **Improvement**: `StateManager.get_workflow_summary()` now handles:
+  - Both dict and TypedDict state formats
+  - LangGraph streaming state accumulation
+  - Pydantic object access patterns
+  - Robust response data extraction for trace mode
+
+### 6.4 Improved Logging System
+- **INFO Level**: Clean, user-friendly progress messages
+- **DEBUG Level**: Detailed technical information for troubleshooting
+- **Structured Logging**: Clear node execution and routing decision logs
+
+## 7. File Structure
 ```
 ├── core/                  # Core workflow logic
 │   ├── state.py          # State management and data models
