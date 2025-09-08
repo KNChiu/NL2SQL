@@ -1,0 +1,19 @@
+# Minimal core dependencies for NL2SQL system
+# This file contains only the essential packages needed to run the system
+
+# Core LangGraph and LangChain (minimum versions for stability)
+langgraph>=0.2.0
+langchain>=0.1.0
+langchain-openai>=0.1.0
+langchain-community>=0.1.0
+langchain-core>=0.1.0
+
+# Database access (SQLite is built-in)
+sqlalchemy>=2.0.0
+
+# Data validation and type safety
+pydantic>=2.0.0
+typing-extensions>=4.0.0
+
+# Environment configuration
+python-dotenv>=1.0.0
