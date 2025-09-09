@@ -104,7 +104,7 @@ uv pip install -r requirements.txt
 Key environment variables:
 
 - `OPENAI_API_KEY`: Your OpenAI API key
-- `OPENAI_MODEL`: Model to use (default: gpt-3.5-turbo)
+- `OPENAI_MODEL`: Model to use (default: gpt-4.1)
 - `DATABASE_URL`: Database connection string (default: sqlite:///Chinook.db)
 - `DEBUG`: Enable debug logging (default: False)
 
@@ -126,6 +126,8 @@ The system follows a clear workflow with structured state management:
 4. **QUERY_VALIDATED**: Security and correctness validation completed
 5. **QUERY_EXECUTED**: SQL execution with results
 6. **RESPONSE_GENERATED**: Natural language response created
+
+![NL2SQL Flow](image/NL2SQL_Flow.png)
 
 ## 📊 JSON State Output
 
@@ -165,6 +167,7 @@ Each workflow execution produces structured JSON output:
 ```bash
 python main.py --query "What are the most popular music genres?"
 ```
+![Example Output](image/Example_Output.png)
 
 **Trace Execution (with detailed workflow visualization):**
 ```bash

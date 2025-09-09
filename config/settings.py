@@ -12,7 +12,7 @@ load_dotenv(dotenv_path=env_path)
 
 class LLMConfig(BaseModel):
     """LLM configuration"""
-    model: str = Field(default="gpt-3.5-turbo")
+    model: str = Field(default="gpt-4.1")
     base_url: Optional[str] = Field(default=None)
     api_key: str = Field(...)
     temperature: float = Field(default=0.1)
@@ -52,7 +52,7 @@ class Settings(BaseModel):
     
     # LLM settings
     llm: LLMConfig = Field(default_factory=lambda: LLMConfig(
-        model=os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo'),
+        model=os.getenv('OPENAI_MODEL', 'gpt-4.1'),
         base_url=os.getenv('OPENAI_BASE_URL'),
         api_key=os.getenv('OPENAI_API_KEY', ''),
         temperature=float(os.getenv('LLM_TEMPERATURE', '0.1')),
